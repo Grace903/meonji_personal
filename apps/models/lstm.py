@@ -24,6 +24,7 @@ def sequence_data(data, sequence_length=24):
     return np.array(x), np.array(y)
 
 # 데이터 분리
+df_latlon = scaled_df[['lat','lon']].values
 df_time = scaled_df[['year','month','day','hour','week']].values
 df_pollutants = scaled_df[['no2', 'o3', 'co', 'so2', 'pm10', 'pm25']].values
 df_weather = scaled_df[['wd', 'ws', 'ta', 'td', 'hm', 'rn', 'sd_tot', 'ca_tot', 'ca_mid', 'vs', 'ts', 'si', 'ps', 'pa']].values
