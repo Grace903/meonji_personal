@@ -3,6 +3,7 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from tensorflow.keras import backend as K
 from tensorflow.keras.layers import Dropout
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
@@ -14,7 +15,9 @@ df = pd.read_csv('data/finedust_basic_data_12.csv')
 
 week_encoded = pd.get_dummies(df['week'], prefix='week')  # 요일 원핫인코딩
 df = pd.concat([df, week_encoded], axis=1)
-df['weekend'] = (df['week'] == 5) | (df['week'] == 6)  # 주말 여부 추가
+
+# 주말 여부 추가
+df['weekend'] = (df['week'] == 5) | (df['week'] == 6)  
 
 # 계절 정보 추가 (season: 1 = 봄, 2 = 여름, 3 = 가을, 4 = 겨울)
 df['season'] = np.select(
@@ -28,7 +31,7 @@ df['season'] = np.select(
     default=0  # 기본값은 0 (예외 처리)
 )
 
-# # 스케일링
+# 스케일링
 scaler = StandardScaler()
 scaled_data = scaler.fit_transform(df.drop(['week'], axis=1))  # 'week' 컬럼 제외하고 스케일링
 scaled_df = pd.DataFrame(scaled_data, columns=df.columns.drop('week'))  # 'week' 제외하고 새로운 DataFrame 생성
@@ -41,13 +44,17 @@ def sequence_data(data, sequence_length=168): # 1주 = 168시간
         y.append(data[i+sequence_length])
     return np.array(x), np.array(y)
 
+# R² 메트릭 정의
+def r2(y_true, y_pred):
+    ss_res = K.sum(K.square(y_true - y_pred))
+    ss_tot = K.sum(K.square(y_true - K.mean(y_true)))
+    return 1 - ss_res / (ss_tot + K.epsilon())
+
 # 데이터 분리
 df_latlon = scaled_df[['lat','lon']].values
 df_time = scaled_df[['year','month','day','hour','season','weekend']].values  # 계절과 주말 정보 추가
 df_climate = scaled_df[['wd','ws','ta','td','hm','rn','sd_tot','ca_tot','ca_mid','vs','ts','si','ps','pa']].values
 df_pm = scaled_df[['pm10', 'pm25', 'no2', 'o3', 'co', 'so2']].values
-# df['weekend'] = (df['week'] == 5) | (df['week'] == 6)  # 주말 여부 추가
-# df['season'] = (df['month'] % 12 + 3) // 3  # 봄, 여름, 가을, 겨울 (1:봄, 2:여름, 3:가을, 4:겨울)
 
 # Pollutants 데이터 시퀀스 생성
 x_pollutants, y_pollutants = sequence_data(df_pm, sequence_length=168)
@@ -62,10 +69,11 @@ model = Sequential()
 # X_train.shape에서 1은 시퀀스 길이 (시간 단계), 2는 피처의 수(각 시점에서의 변수 수)
 model.add(LSTM(128, activation='tanh', input_shape=(x_train.shape[1], x_train.shape[2]), return_sequences=True))
 model.add(LSTM(64, activation='tanh'))
+model.add(Dropout(0.2))
 model.add(Dense(32, activation='tanh'))
 model.add(Dense(6))
-model.compile(optimizer=Adam(), loss='mean_squared_error')
-model.add(Dropout(0.2))
+model.compile(optimizer=Adam(), loss='mean_squared_error', metrics=['mae', 'mse', r2])
+
 
 early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
 
@@ -104,18 +112,27 @@ mse_train = mean_squared_error(y_train, model.predict(x_train))
 mse_test = mean_squared_error(y_test, y_pred)
 print(f"Train MSE: {mse_train}, Test MSE: {mse_test}")
 
-# MAE 및 R² 계산
 mae = mean_absolute_error(y_test, y_pred)
-r2 = r2_score(y_test, y_pred)
 print(f'Mean Absolute Error: {mae}')
+
+r2 = r2_score(y_test, y_pred)
 print(f'R²: {r2}')
 
-plt.plot(y_test[:50, 0], label='True PM10')  # pm10 예측값
-plt.plot(y_pred[:50, 0], label='Predicted PM10')
-plt.plot(y_test[:50, 1], label='True PM25')  # pm25 예측값
-plt.plot(y_pred[:50, 1], label='Predicted PM25')
+
+# 예측값과 실제값 비교 (여기서는 PM10과 PM25 예시)
+plt.figure(figsize=(12, 6))
+plt.subplot(1, 2, 1)
+plt.plot(y_test[:50, 0], label='True PM10')  # 실제 PM10 값
+plt.plot(y_pred[:50, 0], label='Predicted PM10')  # 예측 PM10 값
 plt.legend()
-plt.title('True vs Predicted PM10, PM25')
+plt.title('True vs Predicted PM10')
+
+plt.subplot(1, 2, 2)
+plt.plot(y_test[:50, 1], label='True PM25')  # 실제 PM25 값
+plt.plot(y_pred[:50, 1], label='Predicted PM25')  # 예측 PM25 값
+plt.legend()
+plt.title('True vs Predicted PM25')
+
 plt.show()
 
 # 모델 저장
