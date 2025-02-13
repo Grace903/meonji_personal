@@ -2,14 +2,15 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense
+from tensorflow.keras.layers import LSTM, Dense, Dropout
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import EarlyStopping
 import matplotlib.pyplot as plt
 
 # CSV 파일 읽기
-df = pd.read_csv('data/finedust_basic_data.csv')
+df = pd.read_csv('data/finedust_basic_data_drop.csv')
 
 # 스케일링
 scaler = StandardScaler()
@@ -31,27 +32,28 @@ df_weather = scaled_df[['wd', 'ws', 'ta', 'td', 'hm', 'rn', 'sd_tot', 'ca_tot', 
 x_pollutants, y_pollutants = sequence_data(df_pollutants, sequence_length=24)
 x_weather, y_weather = sequence_data(df_weather, sequence_length=24)
 
-x_train, x_test, y_train, y_test = train_test_split(x_pollutants, y_pollutants, test_size=0.3, shuffle=False)
+x_train, x_test, y_train, y_test = train_test_split(x_pollutants, y_pollutants, test_size=0.2, shuffle=False)
 
+# 모델 구성
 model = Sequential()
-# tanh (하이퍼볼릭 탄젠트) : 출력 범위가 -1과 1 사이, 음수 값을 포함하는 데이터 처리 시 유리함
-# input_shape=(X_train.shape[1], X_train.shape[2]): 입력 데이터의 형태를 지정
-# X_train.shape에서 1은 시퀀스 길이 (시간 단계), 2는 피처의 수(각 시점에서의 변수 수)
 model.add(LSTM(64, activation='tanh', input_shape=(x_train.shape[1], x_train.shape[2])))
 model.add(Dense(32, activation='tanh'))
 model.add(Dense(1))
 model.compile(optimizer=Adam(), loss='mean_squared_error')
 
+# 조기 종료 설정
 early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
 
+# 모델 학습
 history = model.fit(
     x_train, y_train,
     epochs=50,
     batch_size=32,
     validation_data=(x_test, y_test),
     callbacks=[early_stopping]
-    )
+)
 
+# 손실 시각화
 plt.plot(history.history['loss'], label='Training Loss')
 plt.plot(history.history['val_loss'], label='Validation Loss')
 plt.legend()
@@ -59,12 +61,23 @@ plt.show()
 
 # 모델 평가
 test_loss = model.evaluate(x_test, y_test)
-print(f'Test Loss: {test_loss}')
+print(f'Test Loss (MSE): {test_loss}')
+
+# 예측값 계산
+y_pred = model.predict(x_test)
+
+# 회귀 평가 지표 (MSE, MAE, R^2)
+mse = mean_squared_error(y_test, y_pred)
+mae = mean_absolute_error(y_test, y_pred)
+r2 = r2_score(y_test, y_pred)
+
+# 평가 지표 출력
+print(f'Mean Squared Error (MSE): {mse:.4f}')
+print(f'Mean Absolute Error (MAE): {mae:.4f}')
+print(f'R-squared (R^2): {r2:.4f}')
 
 # 결과 시각화
-y_pred = model.predict(x_test)
 plt.plot(y_test[:50], label='True values')
 plt.plot(y_pred[:50], label='Predicted values')
 plt.legend()
 plt.show()
-
