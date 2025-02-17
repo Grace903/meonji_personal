@@ -57,7 +57,6 @@ scaled_data = scaler.fit_transform(df)
 scaled_df = pd.DataFrame(scaled_data, columns=df.columns)
 
 
-
 # 원인 데이터
 def input_data(scaled_df, week_encoded, season_encoded):
     df_latlon = scaled_df[['lat', 'lon']]
@@ -69,6 +68,13 @@ def input_data(scaled_df, week_encoded, season_encoded):
     y = scaled_df[['pm10', 'pm25', 'no2', 'o3', 'co', 'so2']]  # y는 미세먼지 농도 (결과)
     
     return x, y
+
+
+# 데이터 분리
+df_latlon = scaled_df[['lat','lon']].values
+df_time = scaled_df[['year','month','day','hour','season','weekend']].values  # 계절과 주말 정보 추가
+df_climate = scaled_df[['wd','ws','ta','td','hm','rn','sd_tot','ca_tot','ca_mid','vs','ts','si','ps','pa']].values
+df_pm = scaled_df[['pm10', 'pm25', 'no2', 'o3', 'co', 'so2']].values
 
 
 x, y = input_data(scaled_df, week_encoded, season_encoded)
