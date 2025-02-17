@@ -30,20 +30,19 @@ def season_col(df):
     # 계절 원핫 인코딩
     season_encoded = pd.get_dummies(df['season'], prefix='season', drop_first=False)
     df = pd.concat([df, season_encoded], axis=1)
-    df = df.drop(columns=['season'])
+    # df = df.drop(columns=['season'])
     
     return df, season_encoded
 
 
 def dayOfTheWeek_col(df):
-    # 평일/주말 구분 컬럼 추가
     df['weekend'] = df['week'].isin([5, 6]).astype(int)  # 주말
     df['weekday'] = df['week'].isin([0, 1, 2, 3, 4]).astype(int)  # 평일
 
     # 요일 원핫인코딩
     week_encoded = pd.get_dummies(df['week'], prefix='week', drop_first=False)  # 요일 원핫인코딩
     df = pd.concat([df, week_encoded], axis=1)
-    df = df.drop(columns=['week'])
+    # df = df.drop(columns=['week'])
     
     return df, week_encoded
 
@@ -72,80 +71,84 @@ def input_data(scaled_df, week_encoded, season_encoded):
     return x, y
 
 
-def sliding_window_split(x, y, window_size, step_size):
-    x_train_list, y_train_list, x_test_list, y_test_list = [], [], [], []
-    
-    # 데이터 슬라이딩 윈도우로 분할
-    for start in range(0, len(x) - window_size, step_size):
-        end = start + window_size
-        # 훈련 데이터
-        x_train_list.append(x[start:end])
-        y_train_list.append(y[start:end])
-        # 테스트 데이터 (훈련 데이터 뒤의 일정 구간)
-        x_test_list.append(x[end:end + window_size])
-        y_test_list.append(y[end:end + window_size])
-
-    # 리스트를 numpy array로 변환하여 반환
-    return (np.array(x_train_list), np.array(y_train_list), np.array(x_test_list), np.array(y_test_list))
-
-
-# 데이터 준비
-scaled_df, season_encoded = season_col(scaled_df)  # season 컬럼 생성 및 원핫인코딩
-scaled_df, week_encoded = dayOfTheWeek_col(scaled_df)  # week 컬럼 생성 및 원핫인코딩
 x, y = input_data(scaled_df, week_encoded, season_encoded)
 
 
-# 슬라이딩 윈도우 적용
-window_size = 100  # 훈련 데이터의 크기 (예: 100시간)
+
+# x_train을 3D 형식인 (samples, timesteps, features)로 변환
+# 그런데 (samples, features) 형태로 반환되고 있음 -> LSTM에 넣을 수 있도록 timesteps 차원을 추가
+# 변환하려면 x_train, x_test를 numpy 배열로 변환 후 형상 변환을 추가
+
+# def sliding_window_split(x, y, window_size, step_size):
+#     x_train, y_train, x_test, y_test = [], [], [], []   # list로 초기화
+    
+#     # 데이터 슬라이딩 윈도우로 분할
+#     for start in range(0, len(x) - window_size, step_size):
+#         end = start + window_size
+#         # print(f"start: {start}, end: {end}")
+    
+#         # 훈련 데이터
+#         x_train.append(x.iloc[start:end, :].values) 
+#         y_train.append(y.iloc[start:end].values)  
+
+        
+#     # print(f"x_train.append({x.iloc[start:end, :].values}.shape)")
+#     # print(f"y_train.append({y.iloc[start:end].values}.shape)")
+    
+#     # 리스트를 numpy 배열로 변환
+#     x_train = np.array(x_train)
+#     y_train = np.array(y_train)
+    
+#     x_test = np.array(x_test)
+#     y_test = np.array(y_test)
+    
+    
+def sliding_window_split(x, y, window_size, step_size):
+    x_train, y_train, x_test, y_test = [], [], [], []   # list로 초기화
+
+    # 슬라이딩 윈도우로 훈련 데이터 분할
+    for start in range(0, len(x) - window_size+1, step_size):
+        end = start + window_size
+        x_train.append(x.iloc[start:end, :].values)  # (window_size, features)
+        y_train.append(y.iloc[start:end, :].values)  # (window_size, targets)
+
+    # 슬라이딩 윈도우로 테스트 데이터 분할
+    for start in range(len(x) - window_size, len(x), step_size):
+        end = start + window_size
+        x_test.append(x.iloc[start:end, :].values)  # (window_size, features)
+        y_test.append(y.iloc[start:end, :].values)  # (window_size, targets)
+
+    # 리스트를 numpy 배열로 변환
+    x_train = np.array(x_train)
+    y_train = np.array(y_train)
+    x_test = np.array(x_test)
+    y_test = np.array(y_test)
+
+    # x_train과 x_test 형태 확인
+    print(f"Before reshape, x_train shape: {x_train.shape}")
+    print(f"Before reshape, y_train shape: {y_train.shape}")
+    
+    # y_train과 y_test는 2D에서 3D로 변환 (samples, window_size, targets)
+    y_train = y_train.reshape((y_train.shape[0], window_size, y_train.shape[1]))  # (samples, window_size, targets)
+    y_test = y_test.reshape((y_test.shape[0], window_size, y_test.shape[1]))  # (samples, window_size, targets)
+
+    # 변환 후 x_train, y_train, x_test, y_test 형태 확인
+    print(f"x_train shape: {x_train.shape}")
+    print(f"y_train shape: {y_train.shape}")
+    print(f"x_test shape: {x_test.shape}")
+    print(f"y_test shape: {y_test.shape}")
+
+    return x_train, y_train, x_test, y_test
+
+
+# 슬라이딩 윈도우 분할
+window_size = 168  # 1주치 훈련 데이터
 step_size = 24  # 이동 간격 (예: 하루마다)
-x_train, y_train, x_test, y_test = sliding_window_split(x.values, y.values, window_size, step_size)
+
+# x.values와 y.values를 사용하여 슬라이딩 윈도우로 분할
+x_train, y_train, x_test, y_test = sliding_window_split(x, y, window_size, step_size)
 
 
-# 데이터 확인
-print(f"x_train shape: {x_train.shape}")
-print(f"y_train shape: {y_train.shape}")
-print(f"x_test shape: {x_test.shape}")
-print(f"y_test shape: {y_test.shape}")
-
-    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# def sequence_data(data, sequence_length=[24, 168]):
-#     x, y = [], []
-    
-#     for sequence in sequence_length:
-#         for i in range(len(data) - sequence):
-#             # x 데이터와 y 데이터를 numpy로 변환
-#             x_temp = data[i:i+sequence]
-#             y_temp = data[i+sequence]
-            
-#             x.append(x_temp)
-#             y.append(y_temp)
-
-#     # x, y를 numpy array로 반환
-#     x_pollutants = np.concatenate(x, axis=0)
-#     y_pollutants = np.concatenate(y, axis=0)
-
-#     return x_pollutants, y_pollutants
-
-
-# Pollutants 데이터 시퀀스 생성
-# x_pollutants, y_pollutants = sequence_data(df_pm.values, sequence_length=[24, 168])
-
-# 데이터 나누기
-# x_train, x_test, y_train, y_test = train_test_split(x_pollutants, y_pollutants, test_size=0.1, shuffle=False)
 
 
 # R² 메트릭 정의
@@ -155,22 +158,6 @@ def r2(y_true, y_pred):
     return 1 - ss_res / (ss_tot + K.epsilon())
 
 
-
-
-# LSTM 모델 정의
-model = Sequential()
-# tanh (하이퍼볼릭 탄젠트) : 출력 범위가 -1과 1 사이, 음수 값을 포함하는 데이터 처리 시 유리함
-# input_shape=(X_train.shape[1], X_train.shape[2]): 입력 데이터의 형태를 지정
-# X_train.shape에서 1은 시퀀스 길이 (시간 단계), 2는 피처의 수(각 시점에서의 변수 수)
-model.add(LSTM(64, activation='tanh', input_shape=(x_train.shape[1], x_train.shape[2]), return_sequences=True))
-model.add(LSTM(64, activation='tanh'))
-model.add(Dropout(0.2))
-model.add(Dense(32, activation='tanh'))
-model.add(Dense(6))
-model.compile(optimizer=Adam(), loss='mean_squared_error', metrics=['mae', 'mse', r2])
-
-early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
-
 # LearningRateScheduler 콜백 정의
 def scheduler(epoch, lr):
     if epoch > 10:
@@ -179,6 +166,24 @@ def scheduler(epoch, lr):
 
 lr_scheduler = LearningRateScheduler(scheduler)
 
+
+
+# # x_train과 x_test를 3D 배열로 변환
+# x_train = np.array(x_train)
+# x_test = np.array(x_test)
+
+# LSTM 모델 정의
+model = Sequential()
+
+model.add(LSTM(64, activation='tanh', return_sequences=True))
+model.add(LSTM(64, activation='tanh', return_sequences=False))
+model.add(Dropout(0.2))
+model.add(Dense(32, activation='tanh'))
+model.add(Dense(6))
+model.compile(optimizer=Adam(), loss='mean_squared_error', metrics=['mae', 'mse', r2])
+
+early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+
 # 모델 훈련
 history = model.fit(
     x_train, y_train,
@@ -186,7 +191,8 @@ history = model.fit(
     batch_size=32,
     validation_data=(x_test, y_test),
     callbacks=[early_stopping, lr_scheduler]
-    )
+)
+
 
 # 학습 과정 시각화
 plt.plot(history.history['loss'], label='Training Loss')
