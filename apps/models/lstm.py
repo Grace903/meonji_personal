@@ -177,6 +177,8 @@ y_pred_reshaped = y_pred.reshape(-1, y_pred.shape[-1])
 # 모델 저장 경로 (예시: 현재 작업 디렉토리에 저장)
 model_path = 'pm_lstm_sw04.keras'
 
+
+
 # 모델 저장
 model.save(model_path)
 
